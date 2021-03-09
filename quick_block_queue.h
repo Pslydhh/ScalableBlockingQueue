@@ -286,7 +286,7 @@ struct QuickBlockQueue {
         // because the queue is a blocking queue, so we just use more spin.
         times = (1 << 5);
         do {
-            cv = *c;
+            cv = LOAD(c);
             if (cv) goto over;
             PAUSE();
         } while (times-- > 0);
