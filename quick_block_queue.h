@@ -234,20 +234,20 @@ struct QuickBlockQueue {
             // next is nullptr, so we Start filling.
             if (next == nullptr) {
                 //if (i == (j + 1) * N) {
-                    // use thread's standby node.
-                    node_t* temp = th->spare;
-                    if (!temp) {
-                        temp = ob_new_node();
-                        th->spare = temp;
-                    }
-                    // next node's id is j + 1.
-                    temp->id = j + 1;
-                    // if true, then use this thread's node, else then thread has have done this.
-                    if (CASra(&curr->next, &next, temp)) {
-                        next = temp;
-                        // now thread there is no standby node.
-                        th->spare = nullptr;
-                    }
+                // use thread's standby node.
+                node_t* temp = th->spare;
+                if (!temp) {
+                    temp = ob_new_node();
+                    th->spare = temp;
+                }
+                // next node's id is j + 1.
+                temp->id = j + 1;
+                // if true, then use this thread's node, else then thread has have done this.
+                if (CASra(&curr->next, &next, temp)) {
+                    next = temp;
+                    // now thread there is no standby node.
+                    th->spare = nullptr;
+                }
                 /*
                 } else {
                     while ((next = ACQUIRE(&curr->next)) == nullptr) {
