@@ -1,3 +1,18 @@
+// Copyright 2021 Pslydhh. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+#pragma once
+
 #include <linux/futex.h>
 #include <pthread.h>
 #include <syscall.h>
@@ -218,7 +233,7 @@ struct QuickBlockQueue {
             node_t* next = ACQUIRE(&curr->next);
             // next is nullptr, so we Start filling.
             if (next == nullptr) {
-                if (i == (j + 1) * N) {
+                //if (i == (j + 1) * N) {
                     // use thread's standby node.
                     node_t* temp = th->spare;
                     if (!temp) {
@@ -233,11 +248,13 @@ struct QuickBlockQueue {
                         // now thread there is no standby node.
                         th->spare = nullptr;
                     }
+                /*
                 } else {
                     while ((next = ACQUIRE(&curr->next)) == nullptr) {
                         PAUSE();
                     }
                 }
+                */
             }
             // take the next node.
             curr = next;
@@ -284,7 +301,7 @@ struct QuickBlockQueue {
         // locate the needed cell.
         void** c = reinterpret_cast<void**>(ob_find_cell(th->pop_node, index, th));
         // because the queue is a blocking queue, so we just use more spin.
-        times = (1 << 5);
+        times = (1 << 0);
         do {
             cv = LOAD(c);
             if (cv) goto over;
