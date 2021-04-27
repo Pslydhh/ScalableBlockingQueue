@@ -1,9 +1,7 @@
 // This codes is originally from the https://github.com/chaoran/fast-wait-free-queue
 
 /** @file */
-
-#ifndef PRIMITIVES_H
-#define PRIMITIVES_H
+#pragma once
 
 /**
  * An atomic fetch-and-add.
@@ -38,6 +36,7 @@
     __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)
 
 #define XCHG(mem, newvalue) __atomic_exchange_n(mem, newvalue, __ATOMIC_ACQ_REL)
+#define XCHGcs(mem, newvalue) __atomic_exchange_n(mem, newvalue, __ATOMIC_SEQ_CST)
 
 /**
  * An atomic swap.
@@ -60,9 +59,29 @@
 #define STORE(ptr, val) __atomic_store_n(ptr, val, __ATOMIC_RELAXED)
 
 /**
+ * An atomic store.
+ */
+#define STOREr(ptr, val) __atomic_store_n(ptr, val, __ATOMIC_RELEASE)
+
+/**
+ * An atomic store.
+ */
+#define STOREcs(ptr, val) __atomic_store_n(ptr, val, __ATOMIC_SEQ_CST)
+
+/**
  * An atomic load. 
  */
 #define LOAD(ptr) __atomic_load_n(ptr, __ATOMIC_RELAXED)
+
+/**
+ * An atomic load(ACQUIRE). 
+ */
+#define LOADa(ptr) __atomic_load_n(ptr, __ATOMIC_ACQUIRE)
+
+/**
+ * An atomic load(ACQUIRE). 
+ */
+#define LOADcs(ptr) __atomic_load_n(ptr, __ATOMIC_SEQ_CST)
 
 /**
  * A store with a preceding release fence to ensure all previous load
@@ -105,5 +124,3 @@ static inline int _CAS2(volatile long* ptr, long* cmp1, long* cmp2, long val1, l
                              : "cc");                     \
         __ret;                                            \
     })
-
-#endif /* end of include guard: PRIMITIVES_H */
