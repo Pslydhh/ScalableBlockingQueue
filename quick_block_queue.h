@@ -25,7 +25,7 @@
 #include "primitives.h"
 
 template <typename T>
-class QuickBlockQueueSPlus {
+class ScalableBlockingQueue {
     static_assert(sizeof(uintptr_t) <= sizeof(void*),
                   "void* pointer can hold every data pointer, So Its size at least as uintptr_t");
 
@@ -97,7 +97,7 @@ public:
         return n;
     }
 
-    QuickBlockQueueSPlus(int threshold = 8)
+    ScalableBlockingQueue(int threshold = 8)
             : init_node(ob_new_node()),
               init_id(0),
               put_index(0),
@@ -110,7 +110,7 @@ public:
               mutex(),
               id(id_allocator.allocate()) {}
 
-    ~QuickBlockQueueSPlus() {
+    ~ScalableBlockingQueue() {
         for (int i = 0; i < enq_handles_size; ++i) {
             auto* handle = enq_handles[i];
             auto& control = handle->control;
@@ -167,7 +167,7 @@ public:
         HandleAggregate() : handles_vector() {}
 
         template <bool is_consumer>
-        handle_t* get_thread_handle(QuickBlockQueueSPlus* q) {
+        handle_t* get_thread_handle(ScalableBlockingQueue* q) {
             while (handles_vector.size() <= q->id) {
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
                 memset(th, 0, sizeof(handle_t));
@@ -378,4 +378,4 @@ public:
 };
 
 template <typename T>
-typename QuickBlockQueueSPlus<T>::IdAllocatoT QuickBlockQueueSPlus<T>::id_allocator;
+typename ScalableBlockingQueue<T>::IdAllocatoT ScalableBlockingQueue<T>::id_allocator;
