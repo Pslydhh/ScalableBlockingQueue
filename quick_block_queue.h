@@ -23,19 +23,28 @@
 
 #include "align.h"
 #include "primitives.h"
-#define NODE_SIZE (1 << 10)
-#define N NODE_SIZE
-#define NBITS (N - 1)
-#define BOT ((void*)0)
-#define TOP ((void*)-1)
 
-// Support 1024 threads.
-#define HANDLES 1024
-struct QuickBlockQueue {
+template <typename T>
+class QuickBlockQueueSPlus {
+    static_assert(sizeof(uintptr_t) <= sizeof(void*),
+                  "void* pointer can hold every data pointer, So Its size at least as uintptr_t");
+
+public:
+    static constexpr int NODE_SIZE = 1 << 10;
+    static constexpr int NODE_BITS = NODE_SIZE - 1;
+
+    struct Cell {
+        Cell() : data(), futex_addr_or_flag(nullptr) {}
+        T data;
+        uint32_t* futex_addr_or_flag;
+    };
+
     struct node_t {
+        node_t() : next(nullptr), id(0), cells() {}
+
         node_t* next DOUBLE_CACHE_ALIGNED;
         long id DOUBLE_CACHE_ALIGNED;
-        void* cells[NODE_SIZE] DOUBLE_CACHE_ALIGNED;
+        Cell cells[NODE_SIZE] DOUBLE_CACHE_ALIGNED;
     };
 
     class IdAllocatoT {
@@ -65,50 +74,50 @@ struct QuickBlockQueue {
         std::mutex lock;
     };
 
-    class ConcurrencyControP {
-    public:
-        ConcurrencyControP(int32_t flag = 0) : flag(flag) {}
-
-        std::atomic<int32_t> flag;
+    struct ConcurrencyControP {
+        int32_t flag;
     };
 
     struct handle_t {
         ConcurrencyControP control;
         node_t* spare;
 
-        std::atomic<node_t*> put_node CACHE_ALIGNED;
-        std::atomic<node_t*> pop_node CACHE_ALIGNED;
+        node_t* put_node CACHE_ALIGNED;
+        node_t* pop_node CACHE_ALIGNED;
+
+        uint32_t futex_addr DOUBLE_CACHE_ALIGNED;
     };
 
     static inline node_t* ob_new_node() {
-        node_t* n = reinterpret_cast<node_t*>(align_malloc(PAGE_SIZE, sizeof(node_t)));
-        memset(n, 0, sizeof(node_t));
+        //node_t* n = reinterpret_cast<node_t*>(align_malloc(PAGE_SIZE, sizeof(node_t)));
+
+        node_t* n = new node_t();
+        //memset(n, 0, sizeof(node_t));
+
         return n;
     }
 
-    QuickBlockQueue(int threshold = 8)
+    QuickBlockQueueSPlus(int threshold = 8)
             : init_node(ob_new_node()),
               init_id(0),
               put_index(0),
               pop_index(0),
               enq_handles(),
               enq_handles_size(0),
-              futex_addr(1),
               deq_handles(),
               deq_handles_size(0),
               threshold(threshold),
               mutex(),
               id(id_allocator.allocate()) {}
 
-    ~QuickBlockQueue() {
+    ~QuickBlockQueueSPlus() {
         for (int i = 0; i < enq_handles_size; ++i) {
             auto* handle = enq_handles[i];
             auto& control = handle->control;
             int32_t flag = 0;
-            if (control.flag.load() == flag && control.flag.compare_exchange_strong(flag, -1)) {
+            if (LOAD(&control.flag) == flag && CAScs(&control.flag, &flag, -1)) {
             } else {
-                (&handle->control)->~ConcurrencyControP();
-                free(handle->spare);
+                delete handle->spare;
                 free(handle);
             }
         }
@@ -117,10 +126,9 @@ struct QuickBlockQueue {
             auto* handle = deq_handles[i];
             auto& control = handle->control;
             int32_t flag = 0;
-            if (control.flag.load() == flag && control.flag.compare_exchange_strong(flag, -1)) {
+            if (LOAD(&control.flag) == flag && CAScs(&control.flag, &flag, -1)) {
             } else {
-                (&handle->control)->~ConcurrencyControP();
-                free(handle->spare);
+                delete handle->spare;
                 free(handle);
             }
         }
@@ -130,19 +138,20 @@ struct QuickBlockQueue {
         do {
             node_t* node = init_node;
             init_node = node->next;
-            free(node);
+            delete node;
         } while (init_node != nullptr);
     }
 
     node_t* init_node;
     long init_id DOUBLE_CACHE_ALIGNED;
 
-    std::atomic<int64_t> put_index DOUBLE_CACHE_ALIGNED;
-    std::atomic<int64_t> pop_index DOUBLE_CACHE_ALIGNED;
+    int64_t put_index DOUBLE_CACHE_ALIGNED;
+    int64_t pop_index DOUBLE_CACHE_ALIGNED;
+
+    static constexpr int HANDLES = 1024;
 
     handle_t* enq_handles[HANDLES];
     int enq_handles_size;
-    int futex_addr;
 
     handle_t* deq_handles[HANDLES];
     int deq_handles_size;
@@ -158,31 +167,31 @@ struct QuickBlockQueue {
         HandleAggregate() : handles_vector() {}
 
         template <bool is_consumer>
-        handle_t* get_thread_handle(QuickBlockQueue* q) {
+        handle_t* get_thread_handle(QuickBlockQueueSPlus* q) {
             while (handles_vector.size() <= q->id) {
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
-
                 memset(th, 0, sizeof(handle_t));
-                new (&th->control) ConcurrencyControP(-2);
+                th->futex_addr = 1;
+                th->control.flag = -2;
 
                 handles_vector.push_back(th);
             }
 
             auto th = handles_vector[q->id];
-            if (th->control.flag.load(std::memory_order_relaxed) < 0) {
-                th->control.flag.store(0, std::memory_order_relaxed);
+            if (LOAD(&th->control.flag) < 0) {
+                STORE(&th->control.flag, 0);
 
                 if (th->spare == nullptr) {
                     th->spare = ob_new_node();
                 }
 
                 std::lock_guard<std::mutex> m(q->mutex);
-                if constexpr (!is_consumer) {
-                    th->put_node.store(q->init_node, std::memory_order_relaxed);
-                    q->enq_handles[q->enq_handles_size++] = th;
-                } else {
-                    th->pop_node.store(q->init_node, std::memory_order_relaxed);
+                if constexpr (is_consumer) {
+                    STORE(&th->pop_node, q->init_node);
                     q->deq_handles[q->deq_handles_size++] = th;
+                } else {
+                    STORE(&th->put_node, q->init_node);
+                    q->enq_handles[q->enq_handles_size++] = th;
                 }
             }
 
@@ -195,16 +204,13 @@ struct QuickBlockQueue {
                 auto& control = handle->control;
 
                 int32_t flag = 0;
-                if (control.flag.load() == -2) {
-                    (&handle->control)->~ConcurrencyControP();
-                    free(handle->spare);
+                if (LOAD(&control.flag) == -2) {
+                    delete handle->spare;
                     free(handle);
-                } else if (control.flag.load() == flag &&
-                           control.flag.compare_exchange_strong(flag, -1)) {
+                } else if (LOAD(&control.flag) == flag && CAScs(&control.flag, &flag, -1)) {
                     //control.flag.store(-1);
                 } else {
-                    (&handle->control)->~ConcurrencyControP();
-                    free(handle->spare);
+                    delete handle->spare;
                     free(handle);
                 }
             }
@@ -216,20 +222,20 @@ struct QuickBlockQueue {
     template <bool is_consumer>
     handle_t* get_thread_handle() {
         thread_local HandleAggregate aggregate;
-        handle_t* handle = aggregate.get_thread_handle<is_consumer>(this);
+        handle_t* handle = aggregate.template get_thread_handle<is_consumer>(this);
         return handle;
     }
 
     /*
     * ob_find_cell: This is our core operation, locating the offset on the nodes and nodes needed.
     */
-    static void* ob_find_cell(std::atomic<node_t*>& ptr, long i, handle_t* th) {
+    static Cell* ob_find_cell(node_t** ptr, long i, handle_t* th) {
         // get current node
-        node_t* curr = ptr.load(std::memory_order_relaxed);
+        node_t* curr = LOAD(ptr);
         /*j is thread's local node'id(put node or pop node), (i / N) is the cell needed node'id.
         and we shoud take it, By filling the nodes between the j and (i / N) through 'next' field*/
         long j = curr->id;
-        for (; j < i / N; ++j) {
+        for (; j < i / NODE_SIZE; ++j) {
             node_t* next = ACQUIRE(&curr->next);
             // next is nullptr, so we Start filling.
             if (next == nullptr) {
@@ -242,7 +248,7 @@ struct QuickBlockQueue {
                 }
                 // next node's id is j + 1.
                 temp->id = j + 1;
-                // if true, then use this thread's node, else then thread has have done this.
+                // if true, then use this thread's node, else then other thread have done this.
                 if (CASra(&curr->next, &next, temp)) {
                     next = temp;
                     // now thread there is no standby node.
@@ -260,90 +266,91 @@ struct QuickBlockQueue {
             curr = next;
         }
         // update our node to the present node.
-        ptr.store(curr, std::memory_order_relaxed);
+        STORE(ptr, curr);
         // Orders processor execution, so other thread can see the '*ptr = curr'.
         // asm volatile ("sfence" ::: "cc", "memory");
         // std::atomic_thread_fence(std::memory_order_seq_cst);
         // now we get the needed cell, its' node is curr and index is i % N.
-        return &curr->cells[i % N];
+        return &curr->cells[i % NODE_SIZE];
     }
 
-    static int ob_futex_wake(void* addr, int val) {
+    static int ob_futex_wake(void* addr, uint32_t val) {
         return syscall(SYS_futex, addr, FUTEX_WAKE, val, NULL, NULL, 0);
     }
 
-    static int ob_futex_wait(void* addr, int val) {
+    static int ob_futex_wait(void* addr, uint32_t val) {
         return syscall(SYS_futex, addr, FUTEX_WAIT, val, NULL, NULL, 0);
     }
 
-    void put(void* v) {
+    void put(T v) {
         handle_t* th = this->get_thread_handle<false>();
         // FAAcs(&this->put_index, 1) return the needed index.
-        void** c = reinterpret_cast<void**>(
-                ob_find_cell(th->put_node, this->put_index.fetch_add(1, std::memory_order_relaxed),
-                             th)); // now c is the nedded cell
-        void* cv;
+        Cell* c = ob_find_cell(&th->put_node, FAA(&put_index, 1), th); // now c is the nedded cell
+        uint32_t* cv;
         /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register) 
-            return BOT, so our value has put into the cell, just return.*/
-        if ((cv = XCHG(c, v)) == BOT) return;
+            return nullptr, so our value has put into the cell, just return.*/
+        c->data = v;
+        if ((cv = XCHG(&c->futex_addr_or_flag, (uint32_t*)1)) == nullptr) return;
         /* else the couterpart pop thread has wait this cell, so we just change the wati'value to 0 and wake it*/
-        *((int*)cv) = 0;
+        STOREr(cv, 0);
         ob_futex_wake(cv, 1);
     }
 
-    void* blocking_get() {
+    T blocking_get() {
         handle_t* th = this->get_thread_handle<true>();
         int times;
-        void* cv;
-        // index is the needed pop_index.
-        long index = this->pop_index.load(std::memory_order_relaxed);
-        this->pop_index.store(index + 1, std::memory_order_relaxed);
+        long index;
         // locate the needed cell.
-        void** c = reinterpret_cast<void**>(ob_find_cell(th->pop_node, index, th));
+        Cell* c = ob_find_cell(&th->pop_node, index = FAA(&pop_index, 1), th);
+        uint32_t* cv;
         // because the queue is a blocking queue, so we just use more spin.
-        times = (1 << 0);
+        times = (1 << 5);
         do {
-            cv = LOAD(c);
-            if (cv) goto over;
+            cv = LOAD(&c->futex_addr_or_flag);
+            if (cv) {
+                LOADa(&c->futex_addr_or_flag);
+                goto over;
+            }
             PAUSE();
         } while (times-- > 0);
-        // XCHG, if return BOT so this cell is NULL, we just wait and observe the futex_addr'value to 0.
-        if ((cv = XCHG(c, &this->futex_addr)) == BOT) {
+        // XCHG, if return nullptr so this cell is NULL, we just wait and observe the futex_addr'value to 0.
+        if ((cv = XCHG(&c->futex_addr_or_flag, &th->futex_addr)) == nullptr) {
             // call wait before compare futex_addr to prevent use-after-free of futex_addr at ob_enqueue(call wake);
             do {
-                ob_futex_wait(&this->futex_addr, 1);
-            } while (this->futex_addr == 1);
-            this->futex_addr = 1;
+                ob_futex_wait(&th->futex_addr, 1);
+            } while (LOAD(&th->futex_addr) == 1);
+            LOADa(&th->futex_addr);
+            STORE(&th->futex_addr, 1);
             // the couterpart put thread has change futex_addr's value to 0. and the data has into cell(c).
-            cv = *c;
+            cv = LOAD(&c->futex_addr_or_flag);
+            assert(cv != nullptr);
         }
     over:
-        /* if the index is the node's last cell: (NBITS == 4095), it Try to reclaim the memory.
+        /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to reclaim the memory.
         * so we just take the smallest ID node that is not reclaimed(init_node), and At the same time, by traversing     
         * the local data of other threads, we get a larger ID node(min_node). 
         * So it is safe to recycle the memory [init_node, min_node).
         */
-        if ((index & NBITS) == NBITS) {
+        if ((index & NODE_BITS) == NODE_BITS) {
             long init_index = ACQUIRE(&this->init_id);
-            if ((th->pop_node.load(std::memory_order_relaxed)->id - init_index) >=
-                        this->threshold &&
-                init_index >= 0 && CASa(&this->init_id, &init_index, -1)) {
+            if ((LOAD(&th->pop_node)->id - init_index) >= this->threshold && init_index >= 0 &&
+                CASa(&this->init_id, &init_index, -1)) {
                 std::lock_guard<std::mutex> m(this->mutex);
                 node_t* init_node = this->init_node;
 
                 th = this->deq_handles[0];
-                node_t* min_node = th->pop_node.load(std::memory_order_relaxed);
+                node_t* min_node = LOAD(&th->pop_node);
 
                 for (int i = 1; i < this->deq_handles_size; ++i) {
                     handle_t* next = this->deq_handles[i];
-                    node_t* next_min = next->pop_node.load(std::memory_order_relaxed);
+                    node_t* next_min = LOAD(&next->pop_node);
                     if (next_min->id < min_node->id) min_node = next_min;
                     if (min_node->id <= init_index) break;
                 }
 
                 for (int i = 0; i < this->enq_handles_size; ++i) {
                     handle_t* next = this->enq_handles[i];
-                    node_t* next_min = next->put_node.load(std::memory_order_relaxed);
+                    node_t* next_min = LOAD(&next->put_node);
                     if (next_min->id < min_node->id) min_node = next_min;
                     if (min_node->id <= init_index) break;
                 }
@@ -360,13 +367,15 @@ struct QuickBlockQueue {
 
                     do {
                         node_t* tmp = init_node->next;
-                        free(init_node);
+                        delete init_node;
                         init_node = tmp;
                     } while (init_node != min_node);
                 }
             }
         }
-        return cv;
+        return c->data;
     }
 };
-QuickBlockQueue::IdAllocatoT QuickBlockQueue::id_allocator;
+
+template <typename T>
+typename QuickBlockQueueSPlus<T>::IdAllocatoT QuickBlockQueueSPlus<T>::id_allocator;
