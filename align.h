@@ -1,5 +1,4 @@
-#ifndef ALIGN_H
-#define ALIGN_H
+#pragma once
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,5 +20,3 @@ static inline void* align_malloc(size_t align, size_t size) {
 
     return ptr;
 }
-
-#endif /* end of include guard: ALIGN_H */
