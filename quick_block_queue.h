@@ -74,12 +74,8 @@ public:
         std::mutex lock;
     };
 
-    struct ConcurrencyControP {
-        int32_t flag;
-    };
-
     struct handle_t {
-        ConcurrencyControP control;
+        int32_t flag;
         node_t* spare;
 
         node_t* put_node CACHE_ALIGNED;
@@ -113,9 +109,8 @@ public:
     ~ScalableBlockingQueue() {
         for (int i = 0; i < enq_handles_size; ++i) {
             auto* handle = enq_handles[i];
-            auto& control = handle->control;
             int32_t flag = 0;
-            if (LOAD(&control.flag) == flag && CAScs(&control.flag, &flag, -1)) {
+            if (LOAD(&handle->flag) == flag && CAScs(&handle->flag, &flag, -1)) {
             } else {
                 delete handle->spare;
                 free(handle);
@@ -124,9 +119,8 @@ public:
 
         for (int i = 0; i < deq_handles_size; ++i) {
             auto* handle = deq_handles[i];
-            auto& control = handle->control;
             int32_t flag = 0;
-            if (LOAD(&control.flag) == flag && CAScs(&control.flag, &flag, -1)) {
+            if (LOAD(&handle->flag) == flag && CAScs(&handle->flag, &flag, -1)) {
             } else {
                 delete handle->spare;
                 free(handle);
@@ -172,14 +166,14 @@ public:
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
                 memset(th, 0, sizeof(handle_t));
                 th->futex_addr = 1;
-                th->control.flag = -2;
+                th->flag = -2;
 
                 handles_vector.push_back(th);
             }
 
             auto th = handles_vector[q->id];
-            if (LOAD(&th->control.flag) < 0) {
-                STORE(&th->control.flag, 0);
+            if (LOAD(&th->flag) < 0) {
+                STORE(&th->flag, 0);
 
                 if (th->spare == nullptr) {
                     th->spare = ob_new_node();
@@ -201,14 +195,12 @@ public:
         ~HandleAggregate() {
             for (auto iter = handles_vector.begin(); iter != handles_vector.end(); ++iter) {
                 auto handle = *iter;
-                auto& control = handle->control;
 
                 int32_t flag = 0;
-                if (LOAD(&control.flag) == -2) {
+                if (LOAD(&handle->flag) == -2) {
                     delete handle->spare;
                     free(handle);
-                } else if (LOAD(&control.flag) == flag && CAScs(&control.flag, &flag, -1)) {
-                    //control.flag.store(-1);
+                } else if (LOAD(&handle->flag) == flag && CAScs(&handle->flag, &flag, -1)) {
                 } else {
                     delete handle->spare;
                     free(handle);
