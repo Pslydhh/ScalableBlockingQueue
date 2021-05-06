@@ -34,9 +34,9 @@ public:
     static constexpr int NODE_BITS = NODE_SIZE - 1;
 
     struct Cell {
-        Cell() : data(), futex_addr_or_flag(nullptr) {}
-        T data;
-        uint32_t* futex_addr_or_flag;
+        Cell() : data_field(), control_field(nullptr) {}
+        T data_field;
+        uint32_t* control_field;
     };
 
     struct node_t {
@@ -75,13 +75,12 @@ public:
     };
 
     struct handle_t {
+        uint32_t futex_addr DOUBLE_CACHE_ALIGNED;
         int32_t flag;
         node_t* spare;
 
         node_t* put_node CACHE_ALIGNED;
         node_t* pop_node CACHE_ALIGNED;
-
-        uint32_t futex_addr DOUBLE_CACHE_ALIGNED;
     };
 
     static inline node_t* ob_new_node() {
@@ -161,7 +160,8 @@ public:
         HandleAggregate() : handles_vector() {}
 
         template <bool is_consumer>
-        handle_t* get_thread_handle(ScalableBlockingQueue* q) {
+        typename std::enable_if<(alignof(std::max_align_t) & 1) == 0, handle_t*>::type
+        get_thread_handle(ScalableBlockingQueue* q) {
             while (handles_vector.size() <= q->id) {
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
                 memset(th, 0, sizeof(handle_t));
@@ -281,8 +281,8 @@ public:
         uint32_t* cv;
         /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register) 
             return nullptr, so our value has put into the cell, just return.*/
-        c->data = v;
-        if ((cv = XCHG(&c->futex_addr_or_flag, (uint32_t*)1)) == nullptr) return;
+        c->data_field = v;
+        if ((cv = XCHG(&c->control_field, (uint32_t*)1)) == nullptr) return;
         /* else the couterpart pop thread has wait this cell, so we just change the wati'value to 0 and wake it*/
         STOREr(cv, 0);
         ob_futex_wake(cv, 1);
@@ -298,15 +298,15 @@ public:
         // because the queue is a blocking queue, so we just use more spin.
         times = (1 << 5);
         do {
-            cv = LOAD(&c->futex_addr_or_flag);
+            cv = LOAD(&c->control_field);
             if (cv) {
-                LOADa(&c->futex_addr_or_flag);
+                LOADa(&c->control_field);
                 goto over;
             }
             PAUSE();
         } while (times-- > 0);
         // XCHG, if return nullptr so this cell is NULL, we just wait and observe the futex_addr'value to 0.
-        if ((cv = XCHG(&c->futex_addr_or_flag, &th->futex_addr)) == nullptr) {
+        if ((cv = XCHG(&c->control_field, &th->futex_addr)) == nullptr) {
             // call wait before compare futex_addr to prevent use-after-free of futex_addr at ob_enqueue(call wake);
             do {
                 ob_futex_wait(&th->futex_addr, 1);
@@ -314,7 +314,7 @@ public:
             LOADa(&th->futex_addr);
             STORE(&th->futex_addr, 1);
             // the couterpart put thread has change futex_addr's value to 0. and the data has into cell(c).
-            cv = LOAD(&c->futex_addr_or_flag);
+            cv = LOAD(&c->control_field);
             assert(cv != nullptr);
         }
     over:
@@ -365,7 +365,7 @@ public:
                 }
             }
         }
-        return c->data;
+        return c->data_field;
     }
 };
 
