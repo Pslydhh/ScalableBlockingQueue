@@ -246,13 +246,6 @@ public:
                     // now thread there is no standby node.
                     th->spare = nullptr;
                 }
-                /*
-                } else {
-                    while ((next = ACQUIRE(&curr->next)) == nullptr) {
-                        PAUSE();
-                    }
-                }
-                */
             }
             // take the next node.
             curr = next;
