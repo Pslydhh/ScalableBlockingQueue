@@ -18,7 +18,11 @@
 #include <syscall.h>
 #include <unistd.h>
 
+#include <cassert>
+#include <cstddef>
+#include <iostream>
 #include <mutex>
+#include <stack>
 #include <vector>
 
 #include "align.h"
