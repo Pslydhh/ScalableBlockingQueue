@@ -38,9 +38,10 @@ public:
     static constexpr int NODE_BITS = NODE_SIZE - 1;
 
     struct Cell {
-        Cell() : data_field(), control_field(nullptr) {}
+        Cell() : data_field(), control_field(0) {}
         T data_field;
-        uint32_t* control_field;
+
+        uint32_t control_field;
     };
 
     struct node_t {
@@ -79,7 +80,6 @@ public:
     };
 
     struct handle_t {
-        uint32_t futex_addr DOUBLE_CACHE_ALIGNED;
         int32_t flag;
         node_t* spare;
 
@@ -169,7 +169,6 @@ public:
             while (handles_vector.size() <= q->id) {
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
                 memset(th, 0, sizeof(handle_t));
-                th->futex_addr = 1;
                 th->flag = -2;
 
                 handles_vector.push_back(th);
@@ -275,14 +274,13 @@ public:
         handle_t* th = this->get_thread_handle<false>();
         // FAAcs(&this->put_index, 1) return the needed index.
         Cell* c = ob_find_cell(&th->put_node, FAA(&put_index, 1), th); // now c is the nedded cell
-        uint32_t* cv;
+        uint32_t cv;
         /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register) 
             return nullptr, so our value has put into the cell, just return.*/
         c->data_field = v;
-        if ((cv = XCHG(&c->control_field, (uint32_t*)1)) == nullptr) return;
+        if (cv = XCHG(&c->control_field, 2) == 0) return;
         /* else the couterpart pop thread has wait this cell, so we just change the wati'value to 0 and wake it*/
-        STOREr(cv, 0);
-        ob_futex_wake(cv, 1);
+        ob_futex_wake(&c->control_field, 1);
     }
 
     T blocking_get() {
@@ -291,7 +289,7 @@ public:
         long index;
         // locate the needed cell.
         Cell* c = ob_find_cell(&th->pop_node, index = FAA(&pop_index, 1), th);
-        uint32_t* cv;
+        uint32_t cv;
         // because the queue is a blocking queue, so we just use more spin.
         times = (1 << 5);
         do {
@@ -302,17 +300,11 @@ public:
             }
             PAUSE();
         } while (times-- > 0);
-        // XCHG, if return nullptr so this cell is NULL, we just wait and observe the futex_addr'value to 0.
-        if ((cv = XCHG(&c->control_field, &th->futex_addr)) == nullptr) {
-            // call wait before compare futex_addr to prevent use-after-free of futex_addr at ob_enqueue(call wake);
+        if ((cv = XCHG(&c->control_field, 1)) == 0) {
             do {
-                ob_futex_wait(&th->futex_addr, 1);
-            } while (LOAD(&th->futex_addr) == 1);
-            LOADa(&th->futex_addr);
-            STORE(&th->futex_addr, 1);
-            // the couterpart put thread has change futex_addr's value to 0. and the data has into cell(c).
-            cv = LOAD(&c->control_field);
-            assert(cv != nullptr);
+                ob_futex_wait(&c->control_field, 1);
+            } while (LOAD(&c->control_field) == 1);
+            LOADa(&c->control_field);
         }
     over:
         /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to reclaim the memory.
