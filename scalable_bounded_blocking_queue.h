@@ -38,12 +38,12 @@ public:
     static constexpr int NODE_BITS = NODE_SIZE - 1;
 
     struct Cell {
-        Cell() : data_field(), control_field(0), put_control_field(0), pop_control_field(0) {}
+        Cell() : data_field(), control_field(0), put_version_field(0), pop_version_field(0) {}
         T data_field;
 
-        uint32_t control_field;
-        uint32_t put_control_field;
-        uint32_t pop_control_field;
+        int64_t control_field;
+        int64_t put_version_field;
+        int64_t pop_version_field;
     };
 
     struct node_t {
@@ -245,15 +245,15 @@ public:
         int64_t put_index_local = FAA(&put_index, 1);
         Cell* c = ob_find_cell(&th->put_node, put_index_local, th);
 
-        uint32_t put_control_field_local;
-        while ((put_control_field_local = LOADcs(&c->put_control_field)) <
+        int64_t put_version_field_local;
+        while ((put_version_field_local = LOADcs(&c->put_version_field)) <
                (put_index_local / NODE_SIZE)) {
-            ob_futex_wait(&c->put_control_field, put_control_field_local);
+            ob_futex_wait(&c->put_version_field, put_version_field_local);
         }
 
         c->data_field = v;
 
-        uint32_t local;
+        int64_t local;
         if ((local = XCHG(&c->control_field, 2)) != 0) {
             ob_futex_wake(&c->control_field, 1);
             assert(local == 1);
@@ -265,10 +265,10 @@ public:
         int64_t pop_index_local = FAA(&pop_index, 1);
         Cell* c = ob_find_cell(&th->pop_node, pop_index_local, th);
 
-        uint32_t pop_control_field_local;
-        while ((pop_control_field_local = LOADcs(&c->pop_control_field)) <
+        int64_t pop_version_field_local;
+        while ((pop_version_field_local = LOADcs(&c->pop_version_field)) <
                (pop_index_local / NODE_SIZE)) {
-            ob_futex_wait(&c->pop_control_field, pop_control_field_local);
+            ob_futex_wait(&c->pop_version_field, pop_version_field_local);
         }
 
         int times = (1 << 5);
@@ -281,7 +281,7 @@ public:
             PAUSE();
         } while (times-- > 0);
 
-        uint32_t local;
+        int64_t local;
         if ((local = XCHG(&c->control_field, 1)) == 0) {
             do {
                 ob_futex_wait(&c->control_field, 1);
@@ -295,16 +295,16 @@ public:
         STORE(&c->control_field, 0);
         T local_result = c->data_field;
 
-        local = LOAD(&c->put_control_field);
-        STOREcs(&c->put_control_field, local + 1);
+        local = LOAD(&c->put_version_field);
+        STOREcs(&c->put_version_field, local + 1);
         if ((LOADcs(&put_index) - pop_index_local) > NODE_SIZE) {
-            ob_futex_wake(&c->put_control_field, INT_MAX);
+            ob_futex_wake(&c->put_version_field, INT_MAX);
         }
 
-        local = LOAD(&c->pop_control_field);
-        STOREcs(&c->pop_control_field, local + 1);
+        local = LOAD(&c->pop_version_field);
+        STOREcs(&c->pop_version_field, local + 1);
         if ((LOADcs(&pop_index) - pop_index_local) > NODE_SIZE) {
-            ob_futex_wake(&c->pop_control_field, INT_MAX);
+            ob_futex_wake(&c->pop_version_field, INT_MAX);
         }
 
         return local_result;
