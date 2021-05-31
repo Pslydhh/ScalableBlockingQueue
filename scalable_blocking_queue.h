@@ -34,7 +34,7 @@ class ScalableBlockingQueue {
                   "void* pointer can hold every data pointer, So Its size at least as uintptr_t");
 
 public:
-    static constexpr int NODE_SIZE = 1 << 10;
+    static constexpr int NODE_SIZE = 1 << 8;
     static constexpr int NODE_BITS = NODE_SIZE - 1;
 
     struct Cell {
