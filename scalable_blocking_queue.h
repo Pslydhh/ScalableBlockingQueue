@@ -98,6 +98,8 @@ public:
 
     ScalableBlockingQueue(int threshold = 8)
             : init_node(ob_new_node()),
+              put_node(init_node),
+              pop_node(init_node),
               init_id(0),
               put_index(0),
               pop_index(0),
@@ -139,7 +141,10 @@ public:
         } while (init_node != nullptr);
     }
 
-    node_t* init_node;
+    node_t* init_node DOUBLE_CACHE_ALIGNED;
+    node_t* put_node DOUBLE_CACHE_ALIGNED;
+    node_t* pop_node DOUBLE_CACHE_ALIGNED;
+
     long init_id DOUBLE_CACHE_ALIGNED;
 
     int64_t put_index DOUBLE_CACHE_ALIGNED;
@@ -184,10 +189,10 @@ public:
 
                 std::lock_guard<std::mutex> m(q->mutex);
                 if constexpr (is_consumer) {
-                    STORE(&th->pop_node, q->init_node);
+                    STORE(&th->pop_node, q->pop_node);
                     q->deq_handles[q->deq_handles_size++] = th;
                 } else {
-                    STORE(&th->put_node, q->init_node);
+                    STORE(&th->put_node, q->put_node);
                     q->enq_handles[q->enq_handles_size++] = th;
                 }
             }
@@ -317,8 +322,46 @@ public:
             if ((LOAD(&th->pop_node)->id - init_index) >= this->threshold && init_index >= 0 &&
                 CASa(&this->init_id, &init_index, -1)) {
                 std::lock_guard<std::mutex> m(this->mutex);
-                node_t* init_node = this->init_node;
+                node_t* local_init_node = this->init_node;
 
+                node_t* min_node = LOAD(&this->deq_handles[0]->pop_node);
+                {
+                    handle_t* deq_handle = this->deq_handles[0];
+                    node_t* max_node = LOAD(&deq_handle->pop_node);
+
+                    for (int i = 0; i < this->deq_handles_size; ++i) {
+                        handle_t* next = this->deq_handles[i];
+                        node_t* next_node = LOAD(&next->pop_node);
+                        if (next_node->id < min_node->id) {
+                            min_node = next_node;
+                        }
+                        if (next_node->id > max_node->id) {
+                            max_node = next_node;
+                        }
+                    }
+
+                    this->pop_node = max_node;
+                }
+
+                {
+                    handle_t* enq_handle = this->enq_handles[0];
+                    node_t* max_node = LOAD(&enq_handle->put_node);
+
+                    for (int i = 0; i < this->enq_handles_size; ++i) {
+                        handle_t* next = this->enq_handles[i];
+                        node_t* next_node = LOAD(&next->put_node);
+                        if (next_node->id < min_node->id) {
+                            min_node = next_node;
+                        }
+                        if (next_node->id > max_node->id) {
+                            max_node = next_node;
+                        }
+                    }
+
+                    this->put_node = max_node;
+                }
+
+                /*
                 th = this->deq_handles[0];
                 node_t* min_node = LOAD(&th->pop_node);
 
@@ -335,7 +378,8 @@ public:
                     if (next_min->id < min_node->id) min_node = next_min;
                     if (min_node->id <= init_index) break;
                 }
-
+                */
+               
                 long new_id = min_node->id;
 
                 //std::cout << "new_id: " << new_id << std::endl;
@@ -347,10 +391,10 @@ public:
                     RELEASE(&this->init_id, new_id);
 
                     do {
-                        node_t* tmp = init_node->next;
-                        delete init_node;
-                        init_node = tmp;
-                    } while (init_node != min_node);
+                        node_t* tmp = local_init_node->next;
+                        delete local_init_node;
+                        local_init_node = tmp;
+                    } while (local_init_node != min_node);
                 }
             }
         }
