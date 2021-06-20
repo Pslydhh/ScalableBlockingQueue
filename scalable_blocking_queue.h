@@ -360,29 +360,8 @@ public:
 
                     this->put_node = max_node;
                 }
-
-                /*
-                th = this->deq_handles[0];
-                node_t* min_node = LOAD(&th->pop_node);
-
-                for (int i = 1; i < this->deq_handles_size; ++i) {
-                    handle_t* next = this->deq_handles[i];
-                    node_t* next_min = LOAD(&next->pop_node);
-                    if (next_min->id < min_node->id) min_node = next_min;
-                    if (min_node->id <= init_index) break;
-                }
-
-                for (int i = 0; i < this->enq_handles_size; ++i) {
-                    handle_t* next = this->enq_handles[i];
-                    node_t* next_min = LOAD(&next->put_node);
-                    if (next_min->id < min_node->id) min_node = next_min;
-                    if (min_node->id <= init_index) break;
-                }
-                */
                
                 long new_id = min_node->id;
-
-                //std::cout << "new_id: " << new_id << std::endl;
 
                 if (new_id <= init_index)
                     RELEASE(&this->init_id, init_index);
