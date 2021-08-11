@@ -283,7 +283,7 @@ public:
         /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register) 
             return nullptr, so our value has put into the cell, just return.*/
         c->data_field = v;
-        if (cv = XCHG(&c->control_field, 2) == 0) return;
+        if ((cv = XCHG(&c->control_field, 2)) == 0) return;
         /* else the couterpart pop thread has wait this cell, so we just change the wati'value to 0 and wake it*/
         ob_futex_wake(&c->control_field, 1);
     }
