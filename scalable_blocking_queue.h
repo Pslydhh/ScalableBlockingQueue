@@ -13,6 +13,7 @@
 // limitations under the License.
 #pragma once
 
+#include <limits.h>
 #include <linux/futex.h>
 #include <pthread.h>
 #include <syscall.h>
@@ -31,7 +32,8 @@
 template <typename T>
 class ScalableBlockingQueue {
     static_assert(sizeof(uintptr_t) <= sizeof(void*),
-                  "void* pointer can hold every data pointer, So Its size at least as uintptr_t");
+                  "void* pointer can hold every data pointer, So Its size at "
+                  "least as uintptr_t");
 
 public:
     static constexpr int NODE_SIZE = 1 << 8;
@@ -88,10 +90,11 @@ public:
     };
 
     static inline node_t* ob_new_node() {
-        //node_t* n = reinterpret_cast<node_t*>(align_malloc(PAGE_SIZE, sizeof(node_t)));
+        // node_t* n = reinterpret_cast<node_t*>(align_malloc(PAGE_SIZE,
+        // sizeof(node_t)));
 
         node_t* n = new node_t();
-        //memset(n, 0, sizeof(node_t));
+        // memset(n, 0, sizeof(node_t));
 
         return n;
     }
@@ -227,19 +230,22 @@ public:
     }
 
     /*
-    * ob_find_cell: This is our core operation, locating the offset on the nodes and nodes needed.
-    */
+   * ob_find_cell: This is our core operation, locating the offset on the nodes
+   * and nodes needed.
+   */
     static Cell* ob_find_cell(node_t** ptr, long i, handle_t* th) {
         // get current node
-        node_t* curr = LOAD(ptr);
-        /*j is thread's local node'id(put node or pop node), (i / N) is the cell needed node'id.
-        and we shoud take it, By filling the nodes between the j and (i / N) through 'next' field*/
+        node_t* curr = LOADa(ptr);
+        /*j is thread's local node'id(put node or pop node), (i / N) is the cell
+    needed node'id.
+    and we shoud take it, By filling the nodes between the j and (i / N) through
+    'next' field*/
         long j = curr->id;
         for (; j < i / NODE_SIZE; ++j) {
             node_t* next = ACQUIRE(&curr->next);
             // next is nullptr, so we Start filling.
             if (next == nullptr) {
-                //if (i == (j + 1) * N) {
+                // if (i == (j + 1) * N) {
                 // use thread's standby node.
                 node_t* temp = th->spare;
                 if (!temp) {
@@ -248,8 +254,9 @@ public:
                 }
                 // next node's id is j + 1.
                 temp->id = j + 1;
-                // if true, then use this thread's node, else then other thread have done this.
-                if (CASra(&curr->next, &next, temp)) {
+                // if true, then use this thread's node, else then other thread have
+                // done this.
+                if (CAScs(&curr->next, &next, temp)) {
                     next = temp;
                     // now thread there is no standby node.
                     th->spare = nullptr;
@@ -259,7 +266,7 @@ public:
             curr = next;
         }
         // update our node to the present node.
-        STORE(ptr, curr);
+        STOREr(ptr, curr);
         // Orders processor execution, so other thread can see the '*ptr = curr'.
         // asm volatile ("sfence" ::: "cc", "memory");
         // std::atomic_thread_fence(std::memory_order_seq_cst);
@@ -278,13 +285,15 @@ public:
     void put(T v) {
         handle_t* th = this->get_thread_handle<false>();
         // FAAcs(&this->put_index, 1) return the needed index.
-        Cell* c = ob_find_cell(&th->put_node, FAA(&put_index, 1), th); // now c is the nedded cell
+        Cell* c = ob_find_cell(&th->put_node, FAA(&put_index, 1),
+                               th); // now c is the nedded cell
         uint32_t cv;
-        /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register) 
-            return nullptr, so our value has put into the cell, just return.*/
+        /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register)
+        return nullptr, so our value has put into the cell, just return.*/
         c->data_field = v;
-        if ((cv = XCHG(&c->control_field, 2)) == 0) return;
-        /* else the couterpart pop thread has wait this cell, so we just change the wati'value to 0 and wake it*/
+        if ((cv = SWAPra(&c->control_field, 2)) == 0) return;
+        /* else the couterpart pop thread has wait this cell, so we just change the
+     * wati'value to 0 and wake it*/
         ob_futex_wake(&c->control_field, 1);
     }
 
@@ -305,18 +314,19 @@ public:
             }
             PAUSE();
         } while (times-- > 0);
-        if ((cv = XCHG(&c->control_field, 1)) == 0) {
+        if ((cv = SWAPra(&c->control_field, 1)) == 0) {
             do {
                 ob_futex_wait(&c->control_field, 1);
             } while (LOAD(&c->control_field) == 1);
             LOADa(&c->control_field);
         }
     over:
-        /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to reclaim the memory.
-        * so we just take the smallest ID node that is not reclaimed(init_node), and At the same time, by traversing     
-        * the local data of other threads, we get a larger ID node(min_node). 
-        * So it is safe to recycle the memory [init_node, min_node).
-        */
+        /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to
+     * reclaim the memory. so we just take the smallest ID node that is not
+     * reclaimed(init_node), and At the same time, by traversing the local data
+     * of other threads, we get a larger ID node(min_node). So it is safe to
+     * recycle the memory [init_node, min_node).
+     */
         if ((index & NODE_BITS) == NODE_BITS) {
             long init_index = ACQUIRE(&this->init_id);
             if ((LOAD(&th->pop_node)->id - init_index) >= this->threshold && init_index >= 0 &&
@@ -327,11 +337,11 @@ public:
                 node_t* min_node = LOAD(&this->deq_handles[0]->pop_node);
                 {
                     handle_t* deq_handle = this->deq_handles[0];
-                    node_t* max_node = LOAD(&deq_handle->pop_node);
+                    node_t* max_node = LOADa(&deq_handle->pop_node);
 
                     for (int i = 0; i < this->deq_handles_size; ++i) {
                         handle_t* next = this->deq_handles[i];
-                        node_t* next_node = LOAD(&next->pop_node);
+                        node_t* next_node = LOADa(&next->pop_node);
                         if (next_node->id < min_node->id) {
                             min_node = next_node;
                         }
@@ -345,11 +355,11 @@ public:
 
                 {
                     handle_t* enq_handle = this->enq_handles[0];
-                    node_t* max_node = LOAD(&enq_handle->put_node);
+                    node_t* max_node = LOADa(&enq_handle->put_node);
 
                     for (int i = 0; i < this->enq_handles_size; ++i) {
                         handle_t* next = this->enq_handles[i];
-                        node_t* next_node = LOAD(&next->put_node);
+                        node_t* next_node = LOADa(&next->put_node);
                         if (next_node->id < min_node->id) {
                             min_node = next_node;
                         }
@@ -360,7 +370,7 @@ public:
 
                     this->put_node = max_node;
                 }
-               
+
                 long new_id = min_node->id;
 
                 if (new_id <= init_index)
