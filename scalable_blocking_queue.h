@@ -229,17 +229,17 @@ public:
         return handle;
     }
 
-    /*
-   * ob_find_cell: This is our core operation, locating the offset on the nodes
-   * and nodes needed.
-   */
+    //
+    // ob_find_cell: This is our core operation, locating the offset on the nodes
+    // and nodes needed.
+    //
     static Cell* ob_find_cell(node_t** ptr, long i, handle_t* th) {
         // get current node
         node_t* curr = LOADa(ptr);
-        /*j is thread's local node'id(put node or pop node), (i / N) is the cell
-    needed node'id.
-    and we shoud take it, By filling the nodes between the j and (i / N) through
-    'next' field*/
+        // j is thread's local node'id(put node or pop node), (i / N) is the cell
+        // needed node'id.
+        // and we shoud take it, By filling the nodes between the j and (i / N) through
+        // 'next' field
         long j = curr->id;
         for (; j < i / NODE_SIZE; ++j) {
             node_t* next = ACQUIRE(&curr->next);
@@ -288,12 +288,12 @@ public:
         Cell* c = ob_find_cell(&th->put_node, FAA(&put_index, 1),
                                th); // now c is the nedded cell
         uint32_t cv;
-        /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register)
-        return nullptr, so our value has put into the cell, just return.*/
+        // if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register)
+        // return nullptr, so our value has put into the cell, just return.
         c->data_field = v;
         if ((cv = SWAPra(&c->control_field, 2)) == 0) return;
-        /* else the couterpart pop thread has wait this cell, so we just change the
-     * wati'value to 0 and wake it*/
+        // else the couterpart pop thread has wait this cell, so we just change the
+        // wati'value to 0 and wake it
         ob_futex_wake(&c->control_field, 1);
     }
 
@@ -321,12 +321,12 @@ public:
             LOADa(&c->control_field);
         }
     over:
-        /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to
-     * reclaim the memory. so we just take the smallest ID node that is not
-     * reclaimed(init_node), and At the same time, by traversing the local data
-     * of other threads, we get a larger ID node(min_node). So it is safe to
-     * recycle the memory [init_node, min_node).
-     */
+        //if the index is the node's last cell: (NODE_BITS == 4095), it Try to
+        // reclaim the memory. so we just take the smallest ID node that is not
+        // reclaimed(init_node), and At the same time, by traversing the local data
+        // of other threads, we get a larger ID node(min_node). So it is safe to
+        // recycle the memory [init_node, min_node).
+        //
         if ((index & NODE_BITS) == NODE_BITS) {
             long init_index = ACQUIRE(&this->init_id);
             if ((LOAD(&th->pop_node)->id - init_index) >= this->threshold && init_index >= 0 &&
