@@ -109,6 +109,7 @@ public:
     }
 
     void put(T v) {
+        // Correctness guarantee: Mutual-Confirming
         int64_t put_index_local = FAA(&put_index, 1);
         Cell* c = ob_find_cell(&init_node, put_index_local);
 
@@ -129,6 +130,7 @@ public:
     }
 
     T blocking_get() {
+        // Correctness guarantee: Mutual-Confirming
         int64_t pop_index_local = FAA(&pop_index, 1);
         Cell* c = ob_find_cell(&init_node, pop_index_local);
 
@@ -163,6 +165,7 @@ public:
         STORE(&c->control_field, 0);
         T local_result = c->data_field;
 
+        // Correctness guarantee: Mutual-Confirming
         local = LOAD(&c->put_version_field);
         STOREr(&c->put_version_field, local + 1);
         local = LOAD(&c->pop_version_field);
