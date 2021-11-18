@@ -27,6 +27,7 @@
 #include <thread>
 
 #include "scalable_blocking_queue.h"
+#include "scalable_blocking_queue_not_hold_local_node.h"
 #include "scalable_bounded_blocking_queue.h"
 
 static int n_const = 10000000;
@@ -85,7 +86,52 @@ void test_use_mutex(int count, int num, int num2, int scores) {
 
 void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
   std::cout << "use new blocking queue:" << std::endl;
-  ScalableBoundedBlockingQueue<int> qq;
+  ScalableBoundedBlockingQueue<int, 1000000> qq;
+  std::vector<std::thread> threads;
+
+  {
+    auto beginTime = std::chrono::high_resolution_clock::now();
+    auto q = &qq;
+
+    for (int i = 0; i < num; ++i) {
+      threads.emplace_back([count, num, q, scores]() -> void {
+        for (int j = 0; j < (count / num); ++j) {
+          for (int k = scores - 1; k >= 0; --k) {
+            if (!q->put_non_blocking(53211)) {
+              q->put_blocking(53211);
+            }
+          }
+        }
+      });
+    }
+
+    num = num2;
+    for (int i = 0; i < num; ++i) {
+      threads.emplace_back([count, num, q, scores]() -> void {
+        for (int j = 0; j < (count / num); ++j) {
+          for (int k = scores - 1; k >= 0; --k) {
+            int value = q->blocking_get();
+            assert(value == 53211);
+          }
+        }
+      });
+    }
+
+    for (std::thread &th : threads)
+      th.join();
+    threads.clear();
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        endTime - beginTime);
+    std::cout << "new blocking queue elapsed time is " << elapsedTime.count()
+              << " milliseconds" << std::endl;
+  }
+}
+
+void test_new_blocking_queue_v2(int count, int num, int num2, int scores) {
+  std::cout << "use new blocking queue:" << std::endl;
+  ScalableBlockingQueueV2<int> qq;
   std::vector<std::thread> threads;
 
   {
@@ -189,7 +235,8 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < times; ++i) {
     std::thread thread([i, nthreads_const2, scores]() -> void {
       std::cout << "" << i << " times: " << std::endl;
-
+      test_new_blocking_queue_v2(n_const, nthreads_const, nthreads_const2,
+                                 scores);
       test_new_blocking_queue(n_const, nthreads_const, nthreads_const2, scores);
       test_new_bounded_blocking_queue(n_const, nthreads_const, nthreads_const2,
                                       scores);
