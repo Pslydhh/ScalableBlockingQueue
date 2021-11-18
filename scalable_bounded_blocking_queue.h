@@ -29,14 +29,12 @@
 #include "align.h"
 #include "primitives.h"
 
-template <typename T> class ScalableBoundedBlockingQueue {
+template <typename T, int SIZE> class ScalableBoundedBlockingQueue {
   static_assert(sizeof(uintptr_t) <= sizeof(void *),
                 "void* pointer can hold every data pointer, So Its size at "
                 "least as uintptr_t");
 
 public:
-  static constexpr int NODE_SIZE = 1000000;
-
   struct Cell {
     Cell()
         : data_field(), control_field(0), put_version_field(0),
@@ -53,7 +51,7 @@ public:
 
     node_t *next DOUBLE_CACHE_ALIGNED;
     long id DOUBLE_CACHE_ALIGNED;
-    Cell cells[NODE_SIZE] DOUBLE_CACHE_ALIGNED;
+    Cell cells[SIZE] DOUBLE_CACHE_ALIGNED;
   };
 
   static inline node_t *ob_new_node() {
@@ -97,7 +95,7 @@ public:
   static Cell *ob_find_cell(node_t **ptr, long i) {
     // get current node
     node_t *curr = LOAD(ptr);
-    return &curr->cells[i % NODE_SIZE];
+    return &curr->cells[i % SIZE];
   }
 
   static int ob_futex_wake(void *addr, uint32_t val) {
@@ -108,35 +106,55 @@ public:
     return syscall(SYS_futex, addr, FUTEX_WAIT, val, NULL, NULL, 0);
   }
 
-  void put(T v) {
-    // Correctness guarantee: Mutual-Confirming
-    int64_t put_index_local = FAA(&put_index, 1);
-    Cell *c = ob_find_cell(&init_node, put_index_local);
+  bool put_blocking(T v) { return this->template put<true>(v); }
 
-    int64_t put_version_field_local;
-    while ((put_version_field_local = LOAD(&c->put_version_field)) <
-           (put_index_local / NODE_SIZE)) {
-      ob_futex_wait(&c->put_version_field, put_version_field_local);
-    }
-    LOADa(&c->put_version_field);
+  bool put_non_blocking(T v) { return this->template put<false>(v); }
 
-    c->data_field = v;
+  template <bool blocking> bool put(T v) {
+    for (;;) {
+      // Correctness guarantee: Mutual-Confirming
+      int64_t put_index_local;
+      if constexpr (blocking) {
+        put_index_local = FAAcs(&put_index, 1);
+      } else {
+        put_index_local = LOADcs(&put_index);
+      }
 
-    int64_t local;
-    if ((local = XCHG(&c->control_field, 2)) != 0) {
-      ob_futex_wake(&c->control_field, 1);
-      assert(local == 1);
+      int64_t version = put_index_local / SIZE;
+      Cell *c = ob_find_cell(&init_node, put_index_local);
+
+      if constexpr (blocking) {
+        int64_t put_version_field_local;
+        while ((put_version_field_local = LOADa(&c->put_version_field)) <
+               version) {
+          ob_futex_wait(&c->put_version_field, put_version_field_local);
+        }
+      } else {
+        if ((LOADcs(&c->put_version_field)) < version) {
+          return false;
+        } else if (!CAScs(&put_index, &put_index_local, put_index_local + 1)) {
+          continue;
+        }
+      }
+
+      c->data_field = v;
+      int64_t local;
+      if ((local = XCHG(&c->control_field, 2)) != 0) {
+        ob_futex_wake(&c->control_field, 1);
+        assert(local == 1);
+      }
+      return true;
     }
   }
 
   T blocking_get() {
     // Correctness guarantee: Mutual-Confirming
-    int64_t pop_index_local = FAA(&pop_index, 1);
+    int64_t pop_index_local = FAAcs(&pop_index, 1);
     Cell *c = ob_find_cell(&init_node, pop_index_local);
 
     int64_t pop_version_field_local;
-    while ((pop_version_field_local = LOAD(&c->pop_version_field)) <
-           (pop_index_local / NODE_SIZE)) {
+    while ((pop_version_field_local = LOADa(&c->pop_version_field)) <
+           (pop_index_local / SIZE)) {
       ob_futex_wait(&c->pop_version_field, pop_version_field_local);
     }
     LOADa(&c->pop_version_field);
@@ -173,10 +191,10 @@ public:
 
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
-    if ((LOAD(&put_index) - pop_index_local) > NODE_SIZE) {
+    if ((LOADa(&put_index) - pop_index_local) > SIZE) {
       ob_futex_wake(&c->put_version_field, INT_MAX);
     }
-    if ((LOAD(&pop_index) - pop_index_local) > NODE_SIZE) {
+    if ((LOADa(&pop_index) - pop_index_local) > SIZE) {
       ob_futex_wake(&c->pop_version_field, INT_MAX);
     }
 
