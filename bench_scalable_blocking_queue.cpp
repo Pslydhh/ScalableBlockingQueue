@@ -97,9 +97,9 @@ void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
       threads.emplace_back([count, num, q, scores]() -> void {
         for (int j = 0; j < (count / num); ++j) {
           for (int k = scores - 1; k >= 0; --k) {
-            if (!q->put_non_blocking(53211)) {
-              q->put_blocking(53211);
-            }
+            // if (!q->put_non_blocking(53211)) {
+            q->put_blocking(53211);
+            //}
           }
         }
       });
@@ -110,7 +110,15 @@ void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
       threads.emplace_back([count, num, q, scores]() -> void {
         for (int j = 0; j < (count / num); ++j) {
           for (int k = scores - 1; k >= 0; --k) {
-            int value = q->blocking_get();
+            int value;
+/*	    for (;;) {
+	        bool is_data;
+	        value = q->get_non_blocking(&is_data);
+		if (is_data) {
+                    break;
+		}
+	    }*/
+	    value = q->get_blocking();
             assert(value == 53211);
           }
         }

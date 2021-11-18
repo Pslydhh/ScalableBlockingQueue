@@ -147,7 +147,53 @@ public:
     }
   }
 
-  T blocking_get() {
+  T get_non_blocking(bool *has_data) {
+    for (;;) {
+      // Correctness guarantee: Mutual-Confirming
+      int64_t pop_index_local = LOADcs(&pop_index);
+      Cell *c = ob_find_cell(&init_node, pop_index_local);
+
+      if ((LOADcs(&c->pop_version_field)) < (pop_index_local / SIZE)) {
+        *has_data = false;
+        return {};
+      }
+
+      int64_t local = LOADa(&c->control_field);
+      if (local < 1) {
+        *has_data = false;
+        return {};
+      } else if (local < 2) {
+        continue;
+      } else {
+        assert(local == 2);
+        if (!CAScs(&pop_index, &pop_index_local, pop_index_local + 1)) {
+          continue;
+        }
+      }
+
+      STORE(&c->control_field, 0);
+      T local_result = c->data_field;
+
+      // Correctness guarantee: Mutual-Confirming
+      local = LOAD(&c->put_version_field);
+      STOREr(&c->put_version_field, local + 1);
+      local = LOAD(&c->pop_version_field);
+      STOREr(&c->pop_version_field, local + 1);
+
+      __atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+      if ((LOADa(&put_index) - pop_index_local) > SIZE) {
+        ob_futex_wake(&c->put_version_field, INT_MAX);
+      }
+      if ((LOADa(&pop_index) - pop_index_local) > SIZE) {
+        ob_futex_wake(&c->pop_version_field, INT_MAX);
+      }
+      *has_data = true;
+      return local_result;
+    }
+  }
+
+  T get_blocking() {
     // Correctness guarantee: Mutual-Confirming
     int64_t pop_index_local = FAAcs(&pop_index, 1);
     Cell *c = ob_find_cell(&init_node, pop_index_local);
