@@ -86,7 +86,7 @@ void test_use_mutex(int count, int num, int num2, int scores) {
 
 void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
   std::cout << "use new blocking queue:" << std::endl;
-  ScalableBoundedBlockingQueue<int, 1000000> qq;
+  ScalableBoundedBlockingQueue<int, 10> qq;
   std::vector<std::thread> threads;
 
   {
@@ -111,14 +111,14 @@ void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
         for (int j = 0; j < (count / num); ++j) {
           for (int k = scores - 1; k >= 0; --k) {
             int value;
-/*	    for (;;) {
-	        bool is_data;
-	        value = q->get_non_blocking(&is_data);
-		if (is_data) {
+            /*for (;;) {
+                bool is_data;
+                value = q->get_non_blocking(&is_data);
+                if (is_data) {
                     break;
-		}
-	    }*/
-	    value = q->get_blocking();
+                }
+            }*/
+            value = q->get_blocking();
             assert(value == 53211);
           }
         }
@@ -243,12 +243,14 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < times; ++i) {
     std::thread thread([i, nthreads_const2, scores]() -> void {
       std::cout << "" << i << " times: " << std::endl;
-      test_new_blocking_queue_v2(n_const, nthreads_const, nthreads_const2,
-                                 scores);
-      test_new_blocking_queue(n_const, nthreads_const, nthreads_const2, scores);
+      //      test_new_blocking_queue_v2(n_const, nthreads_const,
+      //      nthreads_const2,
+      //                                 scores);
+      //      test_new_blocking_queue(n_const, nthreads_const, nthreads_const2,
+      //      scores);
       test_new_bounded_blocking_queue(n_const, nthreads_const, nthreads_const2,
                                       scores);
-      test_use_mutex(n_const, nthreads_const, nthreads_const2, scores);
+      //      test_use_mutex(n_const, nthreads_const, nthreads_const2, scores);
     });
     thread.join();
   }
