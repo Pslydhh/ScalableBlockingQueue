@@ -222,7 +222,7 @@ public:
     local = LOAD(&c->pop_version_field);
     STOREr(&c->pop_version_field, local + 1);
 
-    //__atomic_thread_fence(__ATOMIC_SEQ_CST);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     if ((LOADa(&put_index) - pop_index_local) > SIZE) {
       ob_futex_wake(&c->put_version_field, INT_MAX);
