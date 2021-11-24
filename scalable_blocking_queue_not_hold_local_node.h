@@ -91,7 +91,7 @@ public:
         uint64_t pop_node_id CACHE_ALIGNED;
     };
 
-    static inline node_t* ob_new_node() {
+    static inline node_t *ob_new_node() {
         node_t* n = new node_t();
         return n;
     }
