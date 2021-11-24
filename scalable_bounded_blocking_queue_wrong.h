@@ -48,7 +48,7 @@ public:
     int64_t pop_version_field;
   };
 
-  struct node_t {
+  struct alignas(PAGE_SIZE) node_t {
     node_t() : next(nullptr), id(0), cells() {}
 
     node_t *next DOUBLE_CACHE_ALIGNED;
@@ -57,12 +57,7 @@ public:
   };
 
   static inline node_t *ob_new_node() {
-    // node_t* n = reinterpret_cast<node_t*>(align_malloc(PAGE_SIZE,
-    // sizeof(node_t)));
-
     node_t *n = new node_t();
-    // memset(n, 0, sizeof(node_t));
-
     return n;
   }
 
