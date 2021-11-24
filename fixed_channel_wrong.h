@@ -29,7 +29,7 @@
 #include "align.h"
 #include "primitives.h"
 
-template <typename T> class ScalableBoundedBlockingQueueWrong {
+template <typename T> class FixedChannelWrong {
   static_assert(sizeof(uintptr_t) <= sizeof(void *),
                 "void* pointer can hold every data pointer, So Its size at "
                 "least as uintptr_t");
@@ -60,11 +60,11 @@ public:
     return n;
   }
 
-  ScalableBoundedBlockingQueueWrong(int threshold = 8)
+  FixedChannelWrong(int threshold = 8)
       : init_node(ob_new_node()), init_id(0), put_index(0), pop_index(0),
         threshold(threshold), mutex() {}
 
-  ~ScalableBoundedBlockingQueueWrong() {
+  ~FixedChannelWrong() {
     do {
       node_t *node = init_node;
       init_node = node->next;

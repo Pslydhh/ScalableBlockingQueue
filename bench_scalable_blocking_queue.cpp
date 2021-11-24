@@ -27,8 +27,9 @@
 #include <thread>
 
 #include "channel.h"
-#include "scalable_blocking_queue_not_hold_local_node.h"
+#include "channel_better.h"
 #include "fixed_channel.h"
+#include "fixed_channel_wrong.h"
 
 static int n_const = 10000000;
 static int nthreads_const = 8;
@@ -137,9 +138,62 @@ void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
   }
 }
 
+void test_fixed_channel_wrong(int count, int num, int num2, int scores) {
+  std::cout << "use new blocking queue:" << std::endl;
+  FixedChannelWrong<int> qq;
+  std::vector<std::thread> threads;
+
+  {
+    auto beginTime = std::chrono::high_resolution_clock::now();
+    auto q = &qq;
+
+    for (int i = 0; i < num; ++i) {
+      threads.emplace_back([count, num, q, scores]() -> void {
+        for (int j = 0; j < (count / num); ++j) {
+          for (int k = scores - 1; k >= 0; --k) {
+            // if (!q->put_non_blocking(53211)) {
+            q->put_blocking(53211);
+            //}
+          }
+        }
+      });
+    }
+
+    num = num2;
+    for (int i = 0; i < num; ++i) {
+      threads.emplace_back([count, num, q, scores]() -> void {
+        for (int j = 0; j < (count / num); ++j) {
+          for (int k = scores - 1; k >= 0; --k) {
+            int value;
+            /*for (;;) {
+                bool is_data;
+                value = q->get_non_blocking(&is_data);
+                if (is_data) {
+                    break;
+                }
+            }*/
+            value = q->get_blocking();
+            assert(value == 53211);
+          }
+        }
+      });
+    }
+
+    for (std::thread &th : threads)
+      th.join();
+    threads.clear();
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        endTime - beginTime);
+    std::cout << "new blocking queue elapsed time is " << elapsedTime.count()
+              << " milliseconds" << std::endl;
+  }
+}
+
 void test_new_blocking_queue_v2(int count, int num, int num2, int scores) {
   std::cout << "use new blocking queue:" << std::endl;
-  ScalableBlockingQueueV2<int> qq;
+  ChannelBetter<int> qq;
   std::vector<std::thread> threads;
 
   {
@@ -182,7 +236,7 @@ void test_new_blocking_queue_v2(int count, int num, int num2, int scores) {
 
 void test_new_blocking_queue(int count, int num, int num2, int scores) {
   std::cout << "use new blocking queue:" << std::endl;
-  ScalableBlockingQueue<int> qq;
+  Channel<int> qq;
   std::vector<std::thread> threads;
 
   {
@@ -251,6 +305,7 @@ int main(int argc, char *argv[]) {
       test_new_bounded_blocking_queue(n_const, nthreads_const, nthreads_const2,
                                       scores);
             test_use_mutex(n_const, nthreads_const, nthreads_const2, scores);
+	    //test_fixed_channel_wrong(n_const, nthreads_const, nthreads_const2, scores);
     });
     thread.join();
   }

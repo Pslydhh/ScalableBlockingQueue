@@ -30,7 +30,7 @@
 #include "primitives.h"
 
 template <typename T>
-class ScalableBlockingQueueV2 {
+class ChannelBetter {
     static_assert(sizeof(uintptr_t) <= sizeof(void*),
                   "void* pointer can hold every data pointer, So Its size at least as uintptr_t");
 
@@ -96,7 +96,7 @@ public:
         return n;
     }
 
-    ScalableBlockingQueueV2(int threshold = 8)
+    ChannelBetter(int threshold = 8)
             : init_node(ob_new_node()),
               put_node(init_node),
               pop_node(init_node),
@@ -111,7 +111,7 @@ public:
               mutex(),
               id(id_allocator.allocate()) {}
 
-    ~ScalableBlockingQueueV2() {
+    ~ChannelBetter() {
         for (int i = 0; i < enq_handles_size; ++i) {
             auto* handle = enq_handles[i];
             int32_t flag = 0;
@@ -170,7 +170,7 @@ public:
 
         template <bool is_consumer>
         typename std::enable_if<(alignof(std::max_align_t) & 1) == 0, handle_t*>::type
-        get_thread_handle(ScalableBlockingQueueV2* q) {
+        get_thread_handle(ChannelBetter* q) {
             while (handles_vector.size() <= q->id) {
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
                 memset(th, 0, sizeof(handle_t));
@@ -417,5 +417,5 @@ public:
 };
 
 template <typename T>
-typename ScalableBlockingQueueV2<T>::IdAllocatoT ScalableBlockingQueueV2<T>::id_allocator;
+typename ChannelBetter<T>::IdAllocatoT ChannelBetter<T>::id_allocator;
 

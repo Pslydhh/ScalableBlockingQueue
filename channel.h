@@ -29,7 +29,7 @@
 #include "align.h"
 #include "primitives.h"
 
-template <typename T> class ScalableBlockingQueue {
+template <typename T> class Channel {
   static_assert(sizeof(uintptr_t) <= sizeof(void *),
                 "void* pointer can hold every data pointer, So Its size at "
                 "least as uintptr_t");
@@ -93,13 +93,13 @@ public:
     return n;
   }
 
-  ScalableBlockingQueue(int threshold = 8)
+  Channel(int threshold = 8)
       : init_node(ob_new_node()), put_node(init_node), pop_node(init_node),
         init_id(0), put_index(0), pop_index(0), enq_handles(),
         enq_handles_size(0), deq_handles(), deq_handles_size(0),
         threshold(threshold), mutex(), id(id_allocator.allocate()) {}
 
-  ~ScalableBlockingQueue() {
+  ~Channel() {
     for (int i = 0; i < enq_handles_size; ++i) {
       auto *handle = enq_handles[i];
       int32_t flag = 0;
@@ -159,7 +159,7 @@ public:
     template <bool is_consumer>
     typename std::enable_if<(alignof(std::max_align_t) & 1) == 0,
                             handle_t *>::type
-    get_thread_handle(ScalableBlockingQueue *q) {
+    get_thread_handle(Channel *q) {
       while (handles_vector.size() <= q->id) {
         handle_t *th = (handle_t *)malloc(sizeof(handle_t));
         memset(th, 0, sizeof(handle_t));
@@ -380,5 +380,5 @@ public:
 };
 
 template <typename T>
-typename ScalableBlockingQueue<T>::IdAllocatoT
-    ScalableBlockingQueue<T>::id_allocator;
+typename Channel<T>::IdAllocatoT
+    Channel<T>::id_allocator;
