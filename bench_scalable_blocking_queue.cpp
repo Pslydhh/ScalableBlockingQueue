@@ -26,9 +26,9 @@
 #include <set>
 #include <thread>
 
-#include "scalable_blocking_queue.h"
+#include "channel.h"
 #include "scalable_blocking_queue_not_hold_local_node.h"
-#include "scalable_bounded_blocking_queue.h"
+#include "fixed_channel.h"
 
 static int n_const = 10000000;
 static int nthreads_const = 8;
@@ -86,7 +86,7 @@ void test_use_mutex(int count, int num, int num2, int scores) {
 
 void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
   std::cout << "use new blocking queue:" << std::endl;
-  ScalableBoundedBlockingQueue<int, 1000000> qq;
+  FixedChannel<int, 1000000> qq;
   std::vector<std::thread> threads;
 
   {
