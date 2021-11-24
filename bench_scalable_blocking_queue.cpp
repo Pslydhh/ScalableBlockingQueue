@@ -86,7 +86,7 @@ void test_use_mutex(int count, int num, int num2, int scores) {
 
 void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
   std::cout << "use new blocking queue:" << std::endl;
-  ScalableBoundedBlockingQueue<int, 10> qq;
+  ScalableBoundedBlockingQueue<int, 1000000> qq;
   std::vector<std::thread> threads;
 
   {
