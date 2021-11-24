@@ -387,18 +387,17 @@ public:
                         }
                     }
 
-                    if (min_version > init_index) {
+                    if (min_version > ((uint64_t) init_index)) {
                         init_node = this->init_node;
                         local_init_node = init_node;
-                        do {
-                            local_init_node = local_init_node->next;
-                        } while (local_init_node->id != min_version);
+                        do { local_init_node = local_init_node->next;
+                        } while (((uint64_t) local_init_node->id) != min_version);
 
                         this->init_node = local_init_node;
                     }
                 }
 
-                if (min_version > init_index) {
+                if (min_version > ((uint64_t) init_index)) {
                     RELEASE(&this->init_id, min_version);
                     while (init_node != local_init_node) {
                         node_t* tmp = init_node->next;

@@ -49,10 +49,9 @@ public:
   };
 
   struct alignas(PAGE_SIZE) node_t {
-    node_t() : next(nullptr), id(0), cells() {}
+    node_t() : next(nullptr), cells() {}
 
     node_t *next DOUBLE_CACHE_ALIGNED;
-    long id DOUBLE_CACHE_ALIGNED;
     Cell cells[NODE_SIZE] DOUBLE_CACHE_ALIGNED;
   };
 
