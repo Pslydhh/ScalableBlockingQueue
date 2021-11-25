@@ -34,8 +34,8 @@
 static int n_const = 10000000;
 static int nthreads_const = 8;
 
-void test_use_mutex(int count, int num, int num2, int scores) {
-  std::cout << "use mutex:" << std::endl;
+void test_trivial_channel(int count, int num, int num2, int scores) {
+  std::cout << "test trivial channel:" << std::endl;
   std::deque<int> queue;
   std::mutex mutex;
   std::condition_variable not_empty;
@@ -80,14 +80,14 @@ void test_use_mutex(int count, int num, int num2, int scores) {
     auto endTime = std::chrono::high_resolution_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         endTime - beginTime);
-    std::cout << "mutex elapsed time is " << elapsedTime.count()
+    std::cout << "elapsed time is " << elapsedTime.count()
               << " milliseconds" << std::endl;
   }
 }
 
-void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
-  std::cout << "use new blocking queue:" << std::endl;
-  FixedChannel<int, 1000000> qq;
+void test_fixed_channel(int count, int num, int num2, int scores) {
+  std::cout << "test fixed channel:" << std::endl;
+  FixedChannel<int, 10> qq;
   std::vector<std::thread> threads;
 
   {
@@ -133,13 +133,13 @@ void test_new_bounded_blocking_queue(int count, int num, int num2, int scores) {
     auto endTime = std::chrono::high_resolution_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         endTime - beginTime);
-    std::cout << "new blocking queue elapsed time is " << elapsedTime.count()
+    std::cout << "elapsed time is " << elapsedTime.count()
               << " milliseconds" << std::endl;
   }
 }
 
 void test_fixed_channel_wrong(int count, int num, int num2, int scores) {
-  std::cout << "use new blocking queue:" << std::endl;
+  std::cout << "test fixed channel wrong:" << std::endl;
   FixedChannelWrong<int> qq;
   std::vector<std::thread> threads;
 
@@ -186,13 +186,13 @@ void test_fixed_channel_wrong(int count, int num, int num2, int scores) {
     auto endTime = std::chrono::high_resolution_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         endTime - beginTime);
-    std::cout << "new blocking queue elapsed time is " << elapsedTime.count()
+    std::cout << "elapsed time is " << elapsedTime.count()
               << " milliseconds" << std::endl;
   }
 }
 
-void test_new_blocking_queue_v2(int count, int num, int num2, int scores) {
-  std::cout << "use new blocking queue:" << std::endl;
+void test_channel_better(int count, int num, int num2, int scores) {
+  std::cout << "test channel better:" << std::endl;
   ChannelBetter<int> qq;
   std::vector<std::thread> threads;
 
@@ -229,13 +229,13 @@ void test_new_blocking_queue_v2(int count, int num, int num2, int scores) {
     auto endTime = std::chrono::high_resolution_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         endTime - beginTime);
-    std::cout << "new blocking queue elapsed time is " << elapsedTime.count()
+    std::cout << "elapsed time is " << elapsedTime.count()
               << " milliseconds" << std::endl;
   }
 }
 
-void test_new_blocking_queue(int count, int num, int num2, int scores) {
-  std::cout << "use new blocking queue:" << std::endl;
+void test_channel(int count, int num, int num2, int scores) {
+  std::cout << "test channel:" << std::endl;
   Channel<int> qq;
   std::vector<std::thread> threads;
 
@@ -272,7 +272,7 @@ void test_new_blocking_queue(int count, int num, int num2, int scores) {
     auto endTime = std::chrono::high_resolution_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         endTime - beginTime);
-    std::cout << "new blocking queue elapsed time is " << elapsedTime.count()
+    std::cout << "elapsed time is " << elapsedTime.count()
               << " milliseconds" << std::endl;
   }
 }
@@ -297,17 +297,18 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < times; ++i) {
     std::thread thread([i, nthreads_const2, scores]() -> void {
       std::cout << "" << i << " times: " << std::endl;
-            test_new_blocking_queue_v2(n_const, nthreads_const,
+            test_channel_better(n_const, nthreads_const,
             nthreads_const2,
                                        scores);
-            test_new_blocking_queue(n_const, nthreads_const, nthreads_const2,
+            test_channel(n_const, nthreads_const, nthreads_const2,
             scores);
-      test_new_bounded_blocking_queue(n_const, nthreads_const, nthreads_const2,
+      test_fixed_channel(n_const, nthreads_const, nthreads_const2,
                                       scores);
-            test_use_mutex(n_const, nthreads_const, nthreads_const2, scores);
+            test_trivial_channel(n_const, nthreads_const, nthreads_const2, scores);
 	    //test_fixed_channel_wrong(n_const, nthreads_const, nthreads_const2, scores);
     });
     thread.join();
+    std::cout << std::endl;
   }
 
   return 0;
