@@ -87,7 +87,7 @@ void test_trivial_channel(int count, int num, int num2, int scores) {
 
 void test_fixed_channel(int count, int num, int num2, int scores) {
   std::cout << "test fixed channel:" << std::endl;
-  FixedChannel<int, 10000000> qq;
+  FixedChannel<int, 10> qq;
   std::vector<std::thread> threads;
 
   {
