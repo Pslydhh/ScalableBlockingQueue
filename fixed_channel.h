@@ -119,7 +119,7 @@ public:
 
       if constexpr (blocking) {
         int64_t put_version_field_local;
-        while ((put_version_field_local = LOADa(&c->put_version_field)) <
+        while ((put_version_field_local = LOADcs(&c->put_version_field)) <
                version) {
           ob_futex_wait(&c->put_version_field, put_version_field_local);
         }
@@ -176,11 +176,10 @@ public:
     Cell *c = ob_find_cell(&init_node, pop_index_local);
 
     int64_t pop_version_field_local;
-    while ((pop_version_field_local = LOADa(&c->pop_version_field)) <
+    while ((pop_version_field_local = LOADcs(&c->pop_version_field)) <
            (pop_index_local / SIZE)) {
       ob_futex_wait(&c->pop_version_field, pop_version_field_local);
     }
-    LOADa(&c->pop_version_field);
 
     int times = (1 << 1);
     do {
