@@ -16,33 +16,33 @@
 /**
  * An atomic compare-and-swap.
  */
-#define CAS(ptr, cmp, val)                                                     \
-  __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_RELAXED,              \
-                              __ATOMIC_RELAXED)
+#define CAS(ptr, cmp, val)                                          \
+    __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_RELAXED, \
+                                __ATOMIC_RELAXED)
 /**
  * An atomic compare-and-swap that also ensures sequential consistency.
  */
-#define CAScs(ptr, cmp, val)                                                   \
-  __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_SEQ_CST,              \
-                              __ATOMIC_SEQ_CST)
+#define CAScs(ptr, cmp, val)                                        \
+    __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_SEQ_CST, \
+                                __ATOMIC_SEQ_CST)
 /**
  * An atomic compare-and-swap that ensures release semantic when succeed
  * or acquire semantic when failed.
  */
-#define CASra(ptr, cmp, val)                                                   \
-  __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_RELEASE,              \
-                              __ATOMIC_ACQUIRE)
+#define CASra(ptr, cmp, val)                                        \
+    __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_RELEASE, \
+                                __ATOMIC_ACQUIRE)
 /**
  * An atomic compare-and-swap that ensures acquire semantic when succeed
  * or relaxed semantic when failed.
  */
-#define CASa(ptr, cmp, val)                                                    \
-  __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_ACQUIRE,              \
-                              __ATOMIC_RELAXED)
+#define CASa(ptr, cmp, val)                                         \
+    __atomic_compare_exchange_n(ptr, cmp, val, 0, __ATOMIC_ACQUIRE, \
+                                __ATOMIC_RELAXED)
 
 #define XCHG(mem, newvalue) __atomic_exchange_n(mem, newvalue, __ATOMIC_ACQ_REL)
-#define XCHGcs(mem, newvalue)                                                  \
-  __atomic_exchange_n(mem, newvalue, __ATOMIC_SEQ_CST)
+#define XCHGcs(mem, newvalue) \
+    __atomic_exchange_n(mem, newvalue, __ATOMIC_SEQ_CST)
 
 /**
  * An atomic swap.
@@ -103,31 +103,35 @@
 
 #define PAUSE() __asm__("pause")
 
-static inline int _CAS2(volatile long *ptr, long *cmp1, long *cmp2, long val1,
+static inline int _CAS2(volatile long* ptr,
+                        long* cmp1,
+                        long* cmp2,
+                        long val1,
                         long val2) {
-  char success;
-  long tmp1 = *cmp1;
-  long tmp2 = *cmp2;
+    char success;
+    long tmp1 = *cmp1;
+    long tmp2 = *cmp2;
 
-  __asm__ __volatile__("lock cmpxchg16b %1\n"
-                       "setz %0"
-                       : "=q"(success), "+m"(*ptr), "+a"(tmp1), "+d"(tmp2)
-                       : "b"(val1), "c"(val2)
-                       : "cc");
+    __asm__ __volatile__(
+        "lock cmpxchg16b %1\n"
+        "setz %0"
+        : "=q"(success), "+m"(*ptr), "+a"(tmp1), "+d"(tmp2)
+        : "b"(val1), "c"(val2)
+        : "cc");
 
-  *cmp1 = tmp1;
-  *cmp2 = tmp2;
-  return success;
+    *cmp1 = tmp1;
+    *cmp2 = tmp2;
+    return success;
 }
-#define CAS2(p, o1, o2, n1, n2)                                                \
-  _CAS2((volatile long *)p, (long *)o1, (long *)o2, (long)n1, (long)n2)
+#define CAS2(p, o1, o2, n1, n2) \
+    _CAS2((volatile long*)p, (long*)o1, (long*)o2, (long)n1, (long)n2)
 
-#define BTAS(ptr, bit)                                                         \
-  ({                                                                           \
-    char __ret;                                                                \
-    __asm__ __volatile__("lock btsq %2, %0; setnc %1"                          \
-                         : "+m"(*ptr), "=r"(__ret)                             \
-                         : "ri"(bit)                                           \
-                         : "cc");                                              \
-    __ret;                                                                     \
-  })
+#define BTAS(ptr, bit)                                    \
+    ({                                                    \
+        char __ret;                                       \
+        __asm__ __volatile__("lock btsq %2, %0; setnc %1" \
+                             : "+m"(*ptr), "=r"(__ret)    \
+                             : "ri"(bit)                  \
+                             : "cc");                     \
+        __ret;                                            \
+    })
