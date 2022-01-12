@@ -13,11 +13,11 @@
 // limitations under the License.
 #pragma once
 
+#include <limits.h>
 #include <linux/futex.h>
 #include <pthread.h>
 #include <syscall.h>
 #include <unistd.h>
-#include <limits.h>
 
 #include <cassert>
 #include <cstddef>
@@ -32,7 +32,8 @@
 template <typename T>
 class ChannelBetter {
     static_assert(sizeof(uintptr_t) <= sizeof(void*),
-                  "void* pointer can hold every data pointer, So Its size at least as uintptr_t");
+                  "void* pointer can hold every data pointer, So Its size at "
+                  "least as uintptr_t");
 
 public:
     static constexpr int NODE_SIZE = 1 << 8;
@@ -91,31 +92,32 @@ public:
         uint64_t pop_node_id CACHE_ALIGNED;
     };
 
-    static inline node_t *ob_new_node() {
+    static inline node_t* ob_new_node() {
         node_t* n = new node_t();
         return n;
     }
 
     ChannelBetter(int threshold = 8)
-            : init_node(ob_new_node()),
-              put_node(init_node),
-              pop_node(init_node),
-              init_id(0),
-              put_index(0),
-              pop_index(0),
-              enq_handles(),
-              enq_handles_size(0),
-              deq_handles(),
-              deq_handles_size(0),
-              threshold(threshold),
-              mutex(),
-              id(id_allocator.allocate()) {}
+        : init_node(ob_new_node()),
+          put_node(init_node),
+          pop_node(init_node),
+          init_id(0),
+          put_index(0),
+          pop_index(0),
+          enq_handles(),
+          enq_handles_size(0),
+          deq_handles(),
+          deq_handles_size(0),
+          threshold(threshold),
+          mutex(),
+          id(id_allocator.allocate()) {}
 
     ~ChannelBetter() {
         for (int i = 0; i < enq_handles_size; ++i) {
             auto* handle = enq_handles[i];
             int32_t flag = 0;
-            if (LOAD(&handle->flag) == flag && CAScs(&handle->flag, &flag, -1)) {
+            if (LOAD(&handle->flag) == flag &&
+                CAScs(&handle->flag, &flag, -1)) {
             } else {
                 delete handle->spare;
                 free(handle);
@@ -125,7 +127,8 @@ public:
         for (int i = 0; i < deq_handles_size; ++i) {
             auto* handle = deq_handles[i];
             int32_t flag = 0;
-            if (LOAD(&handle->flag) == flag && CAScs(&handle->flag, &flag, -1)) {
+            if (LOAD(&handle->flag) == flag &&
+                CAScs(&handle->flag, &flag, -1)) {
             } else {
                 delete handle->spare;
                 free(handle);
@@ -169,7 +172,8 @@ public:
         HandleAggregate() : handles_vector() {}
 
         template <bool is_consumer>
-        typename std::enable_if<(alignof(std::max_align_t) & 1) == 0, handle_t*>::type
+        typename std::enable_if<(alignof(std::max_align_t) & 1) == 0,
+                                handle_t*>::type
         get_thread_handle(ChannelBetter* q) {
             while (handles_vector.size() <= q->id) {
                 handle_t* th = (handle_t*)malloc(sizeof(handle_t));
@@ -203,14 +207,16 @@ public:
         }
 
         ~HandleAggregate() {
-            for (auto iter = handles_vector.begin(); iter != handles_vector.end(); ++iter) {
+            for (auto iter = handles_vector.begin();
+                 iter != handles_vector.end(); ++iter) {
                 auto handle = *iter;
 
                 int32_t flag = 0;
                 if (LOAD(&handle->flag) == -2) {
                     delete handle->spare;
                     free(handle);
-                } else if (LOAD(&handle->flag) == flag && CAScs(&handle->flag, &flag, -1)) {
+                } else if (LOAD(&handle->flag) == flag &&
+                           CAScs(&handle->flag, &flag, -1)) {
                 } else {
                     delete handle->spare;
                     free(handle);
@@ -224,26 +230,30 @@ public:
     template <bool is_consumer>
     handle_t* get_thread_handle() {
         thread_local HandleAggregate aggregate;
-        handle_t* handle = aggregate.template get_thread_handle<is_consumer>(this);
+        handle_t* handle =
+            aggregate.template get_thread_handle<is_consumer>(this);
         return handle;
     }
 
     /*
-    * ob_find_cell: This is our core operation, locating the offset on the nodes and nodes needed.
-    */
+     * ob_find_cell: This is our core operation, locating the offset on the
+     * nodes and nodes needed.
+     */
     template <bool is_consumer>
     Cell* ob_find_cell(node_t* node, node_t** ptr, long i, handle_t* th) {
         // get current node
         node_t* curr = node;
 
-        /*j is thread's local node'id(put node or pop node), (i / N) is the cell needed node'id.
-        and we shoud take it, By filling the nodes between the j and (i / N) through 'next' field*/
+        /*j is thread's local node'id(put node or pop node), (i / N) is the cell
+        needed node'id.
+        and we shoud take it, By filling the nodes between the j and (i / N)
+        through 'next' field*/
         long j = curr->id;
         for (; j < i / NODE_SIZE; ++j) {
             node_t* next = ACQUIRE(&curr->next);
             // next is nullptr, so we Start filling.
             if (next == nullptr) {
-                //if (i == (j + 1) * N) {
+                // if (i == (j + 1) * N) {
                 // use thread's standby node.
                 node_t* temp = th->spare;
                 if (!temp) {
@@ -252,7 +262,8 @@ public:
                 }
                 // next node's id is j + 1.
                 temp->id = j + 1;
-                // if true, then use this thread's node, else then other thread have done this.
+                // if true, then use this thread's node, else then other thread
+                // have done this.
                 if (CAScs(&curr->next, &next, temp)) {
                     next = temp;
                     // now thread there is no standby node.
@@ -278,7 +289,7 @@ public:
         // update our node to the present node.
         // STORE(ptr, curr);
 
-        //while (old->id < curr->id && !CASra(ptr, &old, curr));
+        // while (old->id < curr->id && !CASra(ptr, &old, curr));
 
         if constexpr (is_consumer) {
             th->pop_node_id = curr->id;
@@ -286,8 +297,8 @@ public:
             th->put_node_id = curr->id;
         }
 
-        // Orders processor execution, so other thread can see the '*ptr = curr'.
-        // asm volatile ("sfence" ::: "cc", "memory");
+        // Orders processor execution, so other thread can see the '*ptr =
+        // curr'. asm volatile ("sfence" ::: "cc", "memory");
         // std::atomic_thread_fence(std::memory_order_seq_cst);
         // now we get the needed cell, its' node is curr and index is i % N.
         return &curr->cells[i % NODE_SIZE];
@@ -306,14 +317,16 @@ public:
         STORE(&th->put_epoch_id, th->put_node_id);
 
         node_t* local_put_node = LOADcs(&this->put_node);
-        Cell* c = ob_find_cell<false>(local_put_node, &this->put_node, FAA(&put_index, 1),
-                                      th); // now c is the nedded cell
+        Cell* c = ob_find_cell<false>(local_put_node, &this->put_node,
+                                      FAA(&put_index, 1),
+                                      th);  // now c is the nedded cell
         uint32_t cv;
-        /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register) 
+        /* if XCHG(ATOMIC: XCHG—Exchange Register/Memory with Register)
             return nullptr, so our value has put into the cell, just return.*/
         c->data_field = v;
         if ((cv = XCHG(&c->control_field, 2)) != 0) {
-            /* else the couterpart pop thread has wait this cell, so we just change the wati'value to 0 and wake it*/
+            /* else the couterpart pop thread has wait this cell, so we just
+             * change the wati'value to 0 and wake it*/
             ob_futex_wake(&c->control_field, 1);
         }
 
@@ -328,8 +341,8 @@ public:
         long index;
 
         node_t* local_pop_node = LOADcs(&this->pop_node);
-        Cell* c =
-                ob_find_cell<true>(local_pop_node, &this->pop_node, index = FAA(&pop_index, 1), th);
+        Cell* c = ob_find_cell<true>(local_pop_node, &this->pop_node,
+                                     index = FAA(&pop_index, 1), th);
         uint32_t cv;
         // because the queue is a blocking queue, so we just use more spin.
         times = (1 << 1);
@@ -348,15 +361,16 @@ public:
             LOADa(&c->control_field);
         }
     over:
-        /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to reclaim the memory.
-        * so we just take the smallest ID node that is not reclaimed(init_node), and At the same time, by traversing     
-        * the local data of other threads, we get a larger ID node(min_node). 
-        * So it is safe to recycle the memory [init_node, min_node).
-        */
+        /* if the index is the node's last cell: (NODE_BITS == 4095), it Try to
+         * reclaim the memory. so we just take the smallest ID node that is not
+         * reclaimed(init_node), and At the same time, by traversing the local
+         * data of other threads, we get a larger ID node(min_node). So it is
+         * safe to recycle the memory [init_node, min_node).
+         */
         if ((index & NODE_BITS) == NODE_BITS) {
             long init_index = ACQUIRE(&this->init_id);
-            if ((LOADcs(&this->pop_node)->id - init_index) >= this->threshold && init_index >= 0 &&
-                CAScs(&this->init_id, &init_index, -1)) {
+            if ((LOADcs(&this->pop_node)->id - init_index) >= this->threshold &&
+                init_index >= 0 && CAScs(&this->init_id, &init_index, -1)) {
                 uint64_t min_version;
                 node_t* init_node;
                 node_t* local_init_node;
@@ -366,7 +380,8 @@ public:
                     uint64_t queue_pop_id = LOADcs(&this->pop_node)->id;
                     uint64_t queue_put_id = LOADcs(&this->put_node)->id;
 
-                    min_version = queue_pop_id < queue_put_id ? queue_pop_id : queue_put_id;
+                    min_version = queue_pop_id < queue_put_id ? queue_pop_id
+                                                              : queue_put_id;
                     {
                         for (int i = 0; i < this->deq_handles_size; ++i) {
                             handle_t* next = this->deq_handles[i];
@@ -387,17 +402,19 @@ public:
                         }
                     }
 
-                    if (min_version > ((uint64_t) init_index)) {
+                    if (min_version > ((uint64_t)init_index)) {
                         init_node = this->init_node;
                         local_init_node = init_node;
-                        do { local_init_node = local_init_node->next;
-                        } while (((uint64_t) local_init_node->id) != min_version);
+                        do {
+                            local_init_node = local_init_node->next;
+                        } while (((uint64_t)local_init_node->id) !=
+                                 min_version);
 
                         this->init_node = local_init_node;
                     }
                 }
 
-                if (min_version > ((uint64_t) init_index)) {
+                if (min_version > ((uint64_t)init_index)) {
                     RELEASE(&this->init_id, min_version);
                     while (init_node != local_init_node) {
                         node_t* tmp = init_node->next;
@@ -418,4 +435,3 @@ public:
 
 template <typename T>
 typename ChannelBetter<T>::IdAllocatoT ChannelBetter<T>::id_allocator;
-
